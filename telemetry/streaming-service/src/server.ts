@@ -13,16 +13,38 @@ const websocketServer = new WebSocketServer({ port: WS_PORT });
 
 tcpServer.on("connection", (socket) => {
   console.log("TCP client connected");
+  const outOfRangeEvents: number[] = [];
 
   socket.on("data", (msg) => {
-    console.log(`Received: ${msg.toString()}`);
+    var message = msg.toString();
+    console.log(`Received: ${message}`);
+    if (message.endsWith("}}")) {
+      message = message.slice(0, -1);
+    }
 
-    const jsonData: VehicleData = JSON.parse(msg.toString());
+    const jsonData: VehicleData = JSON.parse(message);
+
+    if (jsonData.battery_temperature < 20 || jsonData.battery_temperature > 80) {
+      // Add current timestamp to the event list
+      const currentTime = jsonData.timestamp;
+      outOfRangeEvents.push(currentTime);
+
+      // Remove any events older than 5 seconds
+      const fiveSecondsAgo = currentTime - 5000;
+      while (outOfRangeEvents.length > 0 && outOfRangeEvents[0] < fiveSecondsAgo) {
+        outOfRangeEvents.shift();
+      }
+
+      // Check if there are 3 or more events within the last 5 seconds
+      if (outOfRangeEvents.length >= 3) {
+        console.error(`ALERT: Battery is going to blow up! Timestamp: ${jsonData.timestamp}`);
+      }
+    }
 
     // Send JSON over WS to frontend clients
     websocketServer.clients.forEach(function each(client) {
       if (client.readyState === WebSocket.OPEN) {
-        client.send(msg.toString());
+        client.send(message);
       }
     });
   });
